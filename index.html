@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate VR Test</title>
+    <style>
+        body { margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center; }
+        canvas { display: block; }
+        #emergency-btn {
+            position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+            padding: 20px; background: red; border: none; border-radius: 10px;
+            color: white; font-weight: bold; display: none; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div style="padding: 20px;">
+        <h2>Quest VR Test</h2>
+        <p id="status">Checking XR support...</p>
+    </div>
+    <button id="emergency-btn">EMERGENCY ENTER VR</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/VRButton.js"></script>
+
+    <script>
+        let scene, camera, renderer, cube;
+        const status = document.getElementById('status');
+        const emergencyBtn = document.getElementById('emergency-btn');
+
+        // 1. Check if XR exists at all
+        if ('xr' in navigator) {
+            navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                status.innerText = supported ? "XR Supported! Looking for button..." : "XR NOT supported in this browser.";
+                if (!supported) status.style.color = "red";
+            });
+        } else {
+            status.innerText = "WebXR API not found (Check HTTPS/Localhost)";
+            status.style.color = "red";
+        }
+
+        init();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true; //
+            document.body.appendChild(renderer.domElement);
+
+            // Add official button
+            if (typeof VRButton !== 'undefined') {
+                document.body.appendChild(VRButton.createButton(renderer));
+            }
+
+            // Emergency Fallback: If after 3 seconds no button appears, show our own
+            setTimeout(() => {
+                if (document.querySelectorAll('button').length < 2) {
+                    emergencyBtn.style.display = "block";
+                }
+            }, 3000);
+
+            emergencyBtn.onclick = () => {
+                navigator.xr.requestSession('immersive-vr').then(session => {
+                    renderer.xr.setSession(session);
+                    emergencyBtn.style.display = "none";
+                });
+            };
+
+            // Scene content
+            scene.add(new THREE.GridHelper(20, 20));
+            cube = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
+            cube.position.set(0, 1.6, -2);
+            scene.add(cube);
+            scene.add(new THREE.DirectionalLight(0xffffff, 1));
+
+            renderer.setAnimationLoop(() => {
+                cube.rotation.y += 0.01;
+                renderer.render(scene, camera);
+            });
+        }
+    </script>
+</body>
+</html>
