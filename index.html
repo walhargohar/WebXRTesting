@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>360 VR Tour - Pro Interactive</title>
+    <title>360 Virtual Tour Pro</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        #viewer { width: 100vw; height: 100vh; background: #111; }
+        #viewer { width: 100vw; height: 100vh; }
         #emergency-vr-btn {
-            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             padding: 18px 36px; background: #ef4444; color: white; border: none;
             border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
             box-shadow: 0 4px 20px rgba(0,0,0,0.6); display: none;
         }
         #room-label {
             position: absolute; top: 20px; left: 20px; color: white;
-            background: rgba(0,0,0,0.5); padding: 8px 15px; border-radius: 4px;
-            font-weight: bold; pointer-events: none;
+            background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 6px;
+            font-weight: bold; pointer-events: none; z-index: 1000;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -32,9 +32,10 @@
         let scene, camera, renderer, controls, sphere;
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
-        let hotspots3D = []; // Store 3D meshes for interaction
+        let hotspots3D = [];
         let controller1, controller2;
 
+        // XR Check
         if ('xr' in navigator) {
             navigator.xr.isSessionSupported('immersive-vr').then(s => {
                 if(s) document.getElementById('emergency-vr-btn').style.display = 'block';
@@ -47,19 +48,15 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('webgl2', { xrCompatible: true }) || canvas.getContext('webgl', { xrCompatible: true });
-            
-            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.xr.enabled = true; 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // VR Controllers
-            setupVRControllers();
+            // VR Controls & Controllers
+            setupVR();
 
-            // Setup OrbitControls for Desktop
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.rotateSpeed = -0.4;
             controls.enableZoom = true;
@@ -69,11 +66,13 @@
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
-            // Desktop Mouse Interaction
+            // Desktop Interaction
             window.addEventListener('click', onMouseClick);
 
             document.getElementById('emergency-vr-btn').onclick = () => {
-                navigator.xr.requestSession('immersive-vr').then(s => renderer.xr.setSession(s));
+                navigator.xr.requestSession('immersive-vr', {
+                    optionalFeatures: ['local-floor', 'bounded-floor']
+                }).then(s => renderer.xr.setSession(s));
             };
 
             if (tourData.scenes.length > 0) loadScene(tourData.scenes[0].id);
@@ -84,7 +83,7 @@
             });
         }
 
-        function setupVRControllers() {
+        function setupVR() {
             function onSelectStart(event) {
                 const controller = event.target;
                 const tempMatrix = new THREE.Matrix4();
@@ -102,11 +101,11 @@
             controller2.addEventListener('selectstart', onSelectStart);
             scene.add(controller2);
 
-            // Laser Pointer lines
-            const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-10)]);
+            // Laser pointers
+            const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
             const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff });
             const line = new THREE.Line(lineGeom, lineMat);
-            line.scale.z = 5;
+            line.scale.z = 10;
             controller1.add(line.clone());
             controller2.add(line.clone());
         }
@@ -136,21 +135,33 @@
                 sphere.material.map = tex;
                 sphere.material.color.set(0xffffff);
                 sphere.material.needsUpdate = true;
+                
+                if (data.initialView && !renderer.xr.isPresenting) {
+                    const yaw = data.initialView.yaw || 0;
+                    const pitch = data.initialView.pitch || 0;
+                    camera.position.set(0.1 * Math.sin(yaw), 0.1 * Math.sin(pitch), 0.1 * Math.cos(yaw));
+                    controls.update();
+                }
             });
 
             // Clear old 3D hotspots
             hotspots3D.forEach(h => scene.remove(h));
             hotspots3D = [];
 
-            // Create 3D Sprites for hotspots
             const iconLoader = new THREE.TextureLoader();
             data.hotspots.forEach(hs => {
                 iconLoader.load(hs.icon, (tex) => {
-                    const spriteMat = new THREE.SpriteMaterial({ map: tex });
+                    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
                     const sprite = new THREE.Sprite(spriteMat);
-                    sprite.position.set(...hs.position);
-                    sprite.scale.set(15 * (hs.scale || 1), 15 * (hs.scale || 1), 1);
+                    
+                    // --- THE OFFSET FIX ---
+                    // We multiply the position by 0.9 to move it inward from the radius 500 sphere
+                    const pos = new THREE.Vector3(...hs.position).multiplyScalar(0.9);
+                    sprite.position.copy(pos);
+                    
+                    sprite.scale.set(20 * (hs.scale || 1), 20 * (hs.scale || 1), 1);
                     sprite.userData.targetSceneId = hs.targetSceneId;
+                    
                     scene.add(sprite);
                     hotspots3D.push(sprite);
                 });
