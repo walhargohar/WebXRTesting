@@ -3,84 +3,135 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate VR Test</title>
+    <title>360 Virtual Tour Pro</title>
     <style>
-        body { margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center; }
-        canvas { display: block; }
-        #emergency-btn {
-            position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
-            padding: 20px; background: red; border: none; border-radius: 10px;
-            color: white; font-weight: bold; display: none; cursor: pointer;
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #viewer { width: 100vw; height: 100vh; background: #111; }
+        .hotspot {
+            position: absolute; width: 44px; height: 44px; cursor: pointer;
+            transform: translate(-50%, -50%); z-index: 100;
+        }
+        .hotspot img { width: 100%; height: 100%; pointer-events: none; }
+        #room-label {
+            position: absolute; bottom: 80px; left: 20px;
+            background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 4px;
+            font-weight: bold; text-transform: uppercase; font-size: 14px; color: #333;
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/VRButton.js"></script>
 </head>
 <body>
-    <div style="padding: 20px;">
-        <h2>Quest VR Test</h2>
-        <p id="status">Checking XR support...</p>
-    </div>
-    <button id="emergency-btn">EMERGENCY ENTER VR</button>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/VRButton.js"></script>
+    <div id="viewer"></div>
+    <div id="room-label">LOADING...</div>
 
     <script>
-        let scene, camera, renderer, cube;
-        const status = document.getElementById('status');
-        const emergencyBtn = document.getElementById('emergency-btn');
+        const tourData = {"scenes":[{"id":"scene-1766578310949-0","name":"2","image":"images/scene-1766578310949-0.jpg","hotspots":[{"id":"hotspot-1766578317415","position":[-1.7880416517426136,67.05156194034883,-495.07201525267925],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578324563","position":[-496.49668413655905,-37.52640354795391,-38.71377282539662],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310952-1","name":"3","image":"images/scene-1766578310952-1.jpg","hotspots":[{"id":"hotspot-1766578330382","position":[268.51287924761647,-61.31558242732452,416.042352097742],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578333890","position":[275.6862386446213,3.6748517634885483,-416.1599354953487],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310954-2","name":"BACKGROUND","image":"images/scene-1766578310954-2.jpg","hotspots":[{"id":"hotspot-1766578338004","position":[-78.98764378248819,66.10941715247557,-488.2532938864092],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578341612","position":[139.03891719062557,-30.867974683876287,478.41946035854636],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1}],"initialView":{"yaw":0.13305568885792057,"pitch":1.6225402057951994}}]};
+        let scene, camera, renderer, controls, sphere;
 
-        // 1. Check if XR exists at all
-        if ('xr' in navigator) {
-            navigator.xr.isSessionSupported('immersive-vr').then(supported => {
-                status.innerText = supported ? "XR Supported! Looking for button..." : "XR NOT supported in this browser.";
-                if (!supported) status.style.color = "red";
-            });
-        } else {
-            status.innerText = "WebXR API not found (Check HTTPS/Localhost)";
-            status.style.color = "red";
+        window.onload = () => { startEngine(); };
+
+        function startEngine() {
+            try {
+                const container = document.getElementById('viewer');
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                
+                // --- VR OPTIMIZED INITIALIZATION ---
+                // We manually create the context to ensure 'xrCompatible' is set for Meta Quest
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
+                                canvas.getContext('webgl', { xrCompatible: true });
+                
+                renderer = new THREE.WebGLRenderer({ 
+                    canvas: canvas, 
+                    context: context, 
+                    antialias: true, 
+                    powerPreference: "high-performance" 
+                });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.xr.enabled = true;
+                
+                container.appendChild(renderer.domElement);
+
+                // Add official VR Button (Handles the "Supported" check automatically)
+                if (typeof VRButton !== 'undefined') {
+                    document.body.appendChild(VRButton.createButton(renderer));
+                }
+
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.rotateSpeed = -0.4;
+                controls.enableZoom = false; 
+
+                const geometry = new THREE.SphereGeometry(500, 60, 40);
+                const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x222222 });
+                sphere = new THREE.Mesh(geometry, material);
+                scene.add(sphere);
+
+                // Zoom logic for 2D mode
+                renderer.domElement.addEventListener('wheel', (e) => {
+                    camera.fov += e.deltaY * 0.05;
+                    camera.fov = Math.max(30, Math.min(100, camera.fov));
+                    camera.updateProjectionMatrix();
+                }, { passive: true });
+
+                if (tourData && tourData.scenes && tourData.scenes.length > 0) {
+                    loadScene(tourData.scenes[0].id);
+                }
+
+                renderer.setAnimationLoop(() => {
+                    if (!renderer.xr.isPresenting) controls.update();
+                    renderer.render(scene, camera);
+                });
+
+                window.addEventListener('resize', () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+
+            } catch (e) { console.error("Engine Start Error:", e); }
         }
 
-        init();
+        function loadScene(id) {
+            const data = tourData.scenes.find(s => s.id === id);
+            document.getElementById('room-label').innerText = "ROOM: " + data.name;
 
-        function init() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
-            
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true; //
-            document.body.appendChild(renderer.domElement);
+            new THREE.TextureLoader().load(data.image, (tex) => {
+                tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
+                sphere.material.map = tex;
+                sphere.material.color.set(0xffffff);
+                sphere.material.needsUpdate = true;
+                
+                if (data.initialView) {
+                    const yaw = data.initialView.yaw || 0;
+                    const pitch = data.initialView.pitch || 0;
+                    camera.position.set(0.1 * Math.sin(yaw), 0.1 * Math.sin(pitch), 0.1 * Math.cos(yaw));
+                } else { camera.position.set(0, 0, 0.1); }
+                controls.update();
+            });
 
-            // Add official button
-            if (typeof VRButton !== 'undefined') {
-                document.body.appendChild(VRButton.createButton(renderer));
-            }
+            document.querySelectorAll('.hotspot').forEach(h => h.remove());
+            data.hotspots.forEach(hs => {
+                const el = document.createElement('div');
+                el.className = 'hotspot';
+                el.innerHTML = `<img src="${hs.icon}" alt="nav">`;
+                el.onclick = () => loadScene(hs.targetSceneId);
 
-            // Emergency Fallback: If after 3 seconds no button appears, show our own
-            setTimeout(() => {
-                if (document.querySelectorAll('button').length < 2) {
-                    emergencyBtn.style.display = "block";
+                const pos = new THREE.Vector3(...hs.position);
+                function sync() {
+                    const vec = pos.clone().project(camera);
+                    if (vec.z < 1 && !renderer.xr.isPresenting) {
+                        el.style.display = 'block';
+                        el.style.left = `${(vec.x + 1) / 2 * window.innerWidth}px`;
+                        el.style.top = `${-(vec.y - 1) / 2 * window.innerHeight}px`;
+                    } else { el.style.display = 'none'; }
+                    requestAnimationFrame(sync);
                 }
-            }, 3000);
-
-            emergencyBtn.onclick = () => {
-                navigator.xr.requestSession('immersive-vr').then(session => {
-                    renderer.xr.setSession(session);
-                    emergencyBtn.style.display = "none";
-                });
-            };
-
-            // Scene content
-            scene.add(new THREE.GridHelper(20, 20));
-            cube = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
-            cube.position.set(0, 1.6, -2);
-            scene.add(cube);
-            scene.add(new THREE.DirectionalLight(0xffffff, 1));
-
-            renderer.setAnimationLoop(() => {
-                cube.rotation.y += 0.01;
-                renderer.render(scene, camera);
+                document.body.appendChild(el);
+                sync();
             });
         }
     </script>
