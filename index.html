@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 VR Tour - Yacht Specialist</title>
+    <title>360 VR Tour - V4</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #viewer { width: 100vw; height: 100vh; touch-action: none; }
@@ -163,56 +163,44 @@
             renderer.render(scene, camera);
         }
 
-	function loadScene(id) {
-    const data = tourData.scenes.find(s => s.id === id);
-    document.getElementById('room-label').innerText = data.name;
+        function loadScene(id) {
+            const data = tourData.scenes.find(s => s.id === id);
+            document.getElementById('room-label').innerText = data.name;
 
-    new THREE.TextureLoader().load(data.image, (tex) => {
-        tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
-        sphere.material.map = tex;
-        sphere.material.color.set(0xffffff);
-        sphere.material.needsUpdate = true;
-        
-        const yaw = (data.initialView && data.initialView.yaw) || 0;
-        const pitch = (data.initialView && data.initialView.pitch) || 0;
+            new THREE.TextureLoader().load(data.image, (tex) => {
+                tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
+                sphere.material.map = tex;
+                sphere.material.color.set(0xffffff);
+                sphere.material.needsUpdate = true;
+                
+                // --- FIX PART 3: RE-SYNC ON EVERY LOAD ---
+                const yaw = (data.initialView && data.initialView.yaw) || 0;
+                const pitch = (data.initialView && data.initialView.pitch) || 0;
+                
+                const r = 0.1; 
+                camera.position.set(r * Math.sin(yaw) * Math.cos(pitch), r * Math.sin(pitch), r * Math.cos(yaw) * Math.cos(pitch));
+                controls.target.set(0, 0, 0); // Re-anchor target
+                controls.update(); // Synchronize immediately
+            });
 
-        if (!renderer.xr.isPresenting) {
-            // STANDARD 2D PC/MOBILE LOGIC 
-            const r = 0.1; 
-            camera.position.set(
-                r * Math.sin(yaw) * Math.cos(pitch), 
-                r * Math.sin(pitch), 
-                r * Math.cos(yaw) * Math.cos(pitch)
-            );
-            controls.target.set(0, 0, 0);
-            controls.update(); 
-        } else {
-            // --- NEW: VR IMMERSIVE FIX --- 
-            // In VR, we rotate the sphere instead of the camera.
-            // This ensures the "Forward" direction in VR matches your Default View.
-            sphere.rotation.y = -yaw; 
-            // Note: We usually don't rotate pitch in VR to avoid making users feel dizzy.
+            hotspots3D.forEach(h => scene.remove(h));
+            hotspots3D = [];
+
+            const loader = new THREE.TextureLoader();
+            data.hotspots.forEach(hs => {
+                loader.load(hs.icon, (tex) => {
+                    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
+                    const geom = new THREE.PlaneGeometry(1, 1);
+                    const mesh = new THREE.Mesh(geom, mat);
+                    mesh.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
+                    mesh.lookAt(0, 0, 0); // Static orientation
+                    mesh.userData.targetId = hs.targetSceneId;
+                    mesh.userData.base = hs.scale || 1;
+                    scene.add(mesh);
+                    hotspots3D.push(mesh);
+                });
+            });
         }
-    });
-
-    // ... (rest of your hotspot loading code remains exactly the same) 
-    hotspots3D.forEach(h => scene.remove(h));
-    hotspots3D = [];
-    const loader = new THREE.TextureLoader();
-    data.hotspots.forEach(hs => {
-        loader.load(hs.icon, (tex) => {
-            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
-            const geom = new THREE.PlaneGeometry(1, 1);
-            const mesh = new THREE.Mesh(geom, mat);
-            mesh.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
-            mesh.lookAt(0, 0, 0); 
-            mesh.userData.targetId = hs.targetSceneId;
-            mesh.userData.base = hs.scale || 1;
-            scene.add(mesh);
-            hotspots3D.push(mesh);
-        });
-    });
-}        
 
         function onPointerDown(event) {
             pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
