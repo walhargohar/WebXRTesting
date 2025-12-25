@@ -3,20 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 VR Tour - Professional Marine</title>
+    <title>360 Virtual Tour</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #viewer { width: 100vw; height: 100vh; touch-action: none; }
-        #emergency-vr-btn {
-            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-            padding: 18px 36px; background: #ef4444; color: white; border: none;
-            border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.6); display: none;
-        }
+        
+        /* Minimalist UI */
         #room-label {
-            position: absolute; top: 20px; left: 20px; color: white;
-            background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 6px;
+            position: absolute; top: 25px; left: 25px; color: white;
+            background: rgba(0,0,0,0.5); padding: 10px 18px; border-radius: 8px;
             font-weight: bold; pointer-events: none; z-index: 1000;
+            backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        #vr-button-container {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            z-index: 2000;
+        }
+
+        #emergency-vr-btn {
+            padding: 15px 30px; background: #ef4444; color: white; border: none;
+            border-radius: 10px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5); display: none;
+            text-transform: uppercase; letter-spacing: 1px;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -24,8 +33,11 @@
 </head>
 <body>
     <div id="viewer"></div>
-    <div id="room-label">LOADING...</div>
-    <button id="emergency-vr-btn">ENTER VR</button>
+    <div id="room-label">LOADING TOUR...</div>
+    
+    <div id="vr-button-container">
+        <button id="emergency-vr-btn">ENTER VR</button>
+    </div>
 
     <script>
         const tourData = {"scenes":[{"id":"scene-1766578310949-0","name":"2","image":"images/scene-1766578310949-0.jpg","hotspots":[{"id":"hotspot-1766578317415","position":[-1.7880416517426136,67.05156194034883,-495.07201525267925],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578324563","position":[-496.49668413655905,-37.52640354795391,-38.71377282539662],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310952-1","name":"3","image":"images/scene-1766578310952-1.jpg","hotspots":[{"id":"hotspot-1766578330382","position":[268.51287924761647,-61.31558242732452,416.042352097742],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578333890","position":[275.6862386446213,3.6748517634885483,-416.1599354953487],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310954-2","name":"BACKGROUND","image":"images/scene-1766578310954-2.jpg","hotspots":[{"id":"hotspot-1766578338004","position":[-78.98764378248819,66.10941715247557,-488.2532938864092],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578341612","position":[139.03891719062557,-30.867974683876287,478.41946035854636],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1}],"initialView":{"yaw":0.4028626613354817,"pitch":1.655804071366112}}]};
@@ -34,11 +46,11 @@
         let pointer = new THREE.Vector2();
         let hotspots3D = [];
         
-        // Variables for Pinch-to-Zoom
+        // Input tracking
         let initialPinchDistance = 0;
         let initialFOV = 75;
 
-        // XR Check
+        // Check for VR Support
         if ('xr' in navigator) {
             navigator.xr.isSessionSupported('immersive-vr').then(s => {
                 if(s) document.getElementById('emergency-vr-btn').style.display = 'block';
@@ -51,62 +63,60 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
-                            canvas.getContext('webgl', { xrCompatible: true });
-            
-            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true, powerPreference: "high-performance" });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.xr.enabled = true; 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // --- THE FIX FOR POINT 2: INSTANT ROTATION ---
+            // Controls setup - Fixes rotation lag immediately
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.rotateSpeed = -0.4;
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.enableZoom = false; 
-            // Set an explicit target and update immediately
             controls.target.set(0, 0, 0);
             controls.update();
 
             const geometry = new THREE.SphereGeometry(500, 60, 40);
-            const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x222222 });
+            const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x111111 });
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
-            // Desktop Mouse Listeners
-            window.addEventListener('pointerdown', onPointerDown);
-            
-            // Mouse Wheel Zoom
+            // Desktop & Mobile Interactions
+            window.addEventListener('pointermove', (e) => {
+                pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+                pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+
+            window.addEventListener('pointerdown', (e) => {
+                raycaster.setFromCamera(pointer, camera);
+                const intersects = raycaster.intersectObjects(hotspots3D);
+                if (intersects.length > 0) {
+                    const tid = intersects[0].object.userData.targetId;
+                    if (tid) loadScene(tid);
+                }
+            });
+
+            // Zooming - Mouse Wheel
             renderer.domElement.addEventListener('wheel', (e) => {
                 if (renderer.xr.isPresenting) return;
-                camera.fov += e.deltaY * 0.05;
-                camera.fov = Math.max(30, Math.min(100, camera.fov));
+                camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.05));
                 camera.updateProjectionMatrix();
             }, { passive: true });
 
-            // --- MOBILE PINCH TO ZOOM ---
+            // Pinch-to-Zoom (Mobile)
             renderer.domElement.addEventListener('touchstart', (e) => {
                 if (e.touches.length === 2) {
-                    initialPinchDistance = Math.hypot(
-                        e.touches[0].pageX - e.touches[1].pageX,
-                        e.touches[0].pageY - e.touches[1].pageY
-                    );
+                    initialPinchDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
                     initialFOV = camera.fov;
                 }
             }, { passive: false });
 
             renderer.domElement.addEventListener('touchmove', (e) => {
                 if (e.touches.length === 2) {
-                    const currentDistance = Math.hypot(
-                        e.touches[0].pageX - e.touches[1].pageX,
-                        e.touches[0].pageY - e.touches[1].pageY
-                    );
-                    const delta = initialPinchDistance - currentDistance;
-                    camera.fov = initialFOV + (delta * 0.1);
-                    camera.fov = Math.max(30, Math.min(100, camera.fov));
+                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    camera.fov = Math.max(30, Math.min(100, initialFOV + (initialPinchDistance - dist) * 0.1));
                     camera.updateProjectionMatrix();
                 }
             }, { passive: false });
@@ -117,31 +127,30 @@
 
             if (tourData.scenes.length > 0) loadScene(tourData.scenes[0].id);
 
-            renderer.setAnimationLoop(() => {
-                if (!renderer.xr.isPresenting) {
-                    controls.update();
-                    // Keep hotspots consistent with FOV
-                    const scaleFactor = camera.fov / 75; 
-                    hotspots3D.forEach(h => {
-                        const baseScale = 25 * (h.userData.baseScale || 1); // Point 1: +25% default
-                        h.scale.set(baseScale * scaleFactor, baseScale * scaleFactor, 1);
-                    });
-                }
-                renderer.render(scene, camera);
-            });
-
-            window.addEventListener('resize', onResize);
+            renderer.setAnimationLoop(render);
         }
 
-        function onPointerDown(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(hotspots3D);
-            if (intersects.length > 0) {
-                const targetId = intersects[0].object.userData.targetSceneId;
-                if (targetId) loadScene(targetId);
+        function render() {
+            if (!renderer.xr.isPresenting) {
+                controls.update();
+                raycaster.setFromCamera(pointer, camera);
+                
+                // HOVER ANIMATION
+                const fovScale = camera.fov / 75;
+                const hits = raycaster.intersectObjects(hotspots3D);
+                
+                hotspots3D.forEach(h => {
+                    const b = 25 * (h.userData.base || 1);
+                    h.scale.set(b * fovScale, b * fovScale, 1);
+                });
+
+                if (hits.length > 0) {
+                    const h = hits[0].object;
+                    const hv = 32 * (h.userData.base || 1);
+                    h.scale.set(hv * fovScale, hv * fovScale, 1);
+                }
             }
+            renderer.render(scene, camera);
         }
 
         function loadScene(id) {
@@ -158,32 +167,25 @@
                     const yaw = data.initialView.yaw || 0;
                     const pitch = data.initialView.pitch || 0;
                     camera.position.set(0.1 * Math.sin(yaw), 0.1 * Math.sin(pitch), 0.1 * Math.cos(yaw));
-                    controls.update(); // Sync controls to new position
+                    controls.update();
                 }
             });
 
             hotspots3D.forEach(h => scene.remove(h));
             hotspots3D = [];
 
-            const iconLoader = new THREE.TextureLoader();
+            const loader = new THREE.TextureLoader();
             data.hotspots.forEach(hs => {
-                iconLoader.load(hs.icon, (tex) => {
-                    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-                    const sprite = new THREE.Sprite(spriteMat);
-                    const pos = new THREE.Vector3(...hs.position).multiplyScalar(0.9);
-                    sprite.position.copy(pos);
-                    sprite.userData.targetSceneId = hs.targetSceneId;
-                    sprite.userData.baseScale = hs.scale || 1;
+                loader.load(hs.icon, (tex) => {
+                    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+                    const sprite = new THREE.Sprite(mat);
+                    sprite.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
+                    sprite.userData.targetId = hs.targetSceneId;
+                    sprite.userData.base = hs.scale || 1;
                     scene.add(sprite);
                     hotspots3D.push(sprite);
                 });
             });
-        }
-
-        function onResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
         }
     </script>
 </body>
