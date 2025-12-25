@@ -16,8 +16,7 @@
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             padding: 18px 36px; background: #ef4444; color: white; border: none;
             border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
-            display: none; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.4);
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -36,8 +35,7 @@
         let hotspots3D = [];
         let controller1, controller2;
         
-        let initialPinchDistance = 0;
-        let initialFOV = 75;
+        let initialPinchDistance = 0, initialFOV = 75;
 
         if ('xr' in navigator) {
             navigator.xr.isSessionSupported('immersive-vr').then(s => {
@@ -55,27 +53,23 @@
             const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
                             canvas.getContext('webgl', { xrCompatible: true });
             
-            renderer = new THREE.WebGLRenderer({ 
-                canvas: canvas, 
-                context: context, 
-                antialias: true, 
-                powerPreference: "high-performance" 
-            });
-            
+            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.xr.enabled = true; 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // --- VR CONTROLLER SETUP ---
             setupVRControllers();
 
+            // --- FIX PART 1 & 2: INSTANT SYNC ---
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.rotateSpeed = -0.4;
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.enableZoom = false; 
-            controls.target.set(0, 0, 0);
+            controls.target.set(0, 0, 0); // Explicit target
+            camera.position.set(0, 0, 0.1); // Explicit nudge
+            controls.update(); 
 
             const geometry = new THREE.SphereGeometry(500, 60, 40);
             const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x111111 });
@@ -83,28 +77,16 @@
             scene.add(sphere);
 
             window.addEventListener('pointerdown', onPointerDown);
-            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointermove', (e) => {
+                pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+                pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
             
             renderer.domElement.addEventListener('wheel', (e) => {
                 if (renderer.xr.isPresenting) return;
                 camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.05));
                 camera.updateProjectionMatrix();
             }, { passive: true });
-
-            renderer.domElement.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 2) {
-                    initialPinchDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                    initialFOV = camera.fov;
-                }
-            }, { passive: false });
-
-            renderer.domElement.addEventListener('touchmove', (e) => {
-                if (e.touches.length === 2) {
-                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                    camera.fov = Math.max(30, Math.min(100, initialFOV + (initialPinchDistance - dist) * 0.1));
-                    camera.updateProjectionMatrix();
-                }
-            }, { passive: false });
 
             document.getElementById('emergency-vr-btn').onclick = () => {
                 navigator.xr.requestSession('immersive-vr', {
@@ -113,22 +95,12 @@
             };
 
             if (tourData.scenes.length > 0) loadScene(tourData.scenes[0].id);
-
             renderer.setAnimationLoop(renderLoop);
         }
 
         function setupVRControllers() {
-            // FIX: Create laser rays with high Z-order
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(0, 0, 0), 
-                new THREE.Vector3(0, 0, -1)
-            ]);
-            const lineMaterial = new THREE.LineBasicMaterial({ 
-                color: 0xffffff,
-                transparent: true,
-                opacity: 0.5,
-                depthTest: false // Ensures ray is visible on top
-            });
+            const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false });
 
             function onSelectStart(event) {
                 const controller = event.target;
@@ -139,8 +111,8 @@
                 
                 const intersects = raycaster.intersectObjects(hotspots3D);
                 if (intersects.length > 0) {
-                    const targetId = intersects[0].object.userData.targetId;
-                    if (targetId) loadScene(targetId);
+                    const tid = intersects[0].object.userData.targetId;
+                    if (tid) loadScene(tid);
                 }
             }
 
@@ -152,56 +124,42 @@
             controller2.addEventListener('selectstart', onSelectStart);
             scene.add(controller2);
 
-            const line = new THREE.Line(lineGeometry, lineMaterial);
+            const line = new THREE.Line(lineGeom, lineMat);
             line.scale.z = 10;
-            line.renderOrder = 999; // Explicitly render above hotspots
-            
+            line.renderOrder = 999;
             controller1.add(line.clone());
             controller2.add(line.clone());
         }
 
-        function onPointerMove(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        }
-
-        function onPointerDown(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(hotspots3D);
-            if (intersects.length > 0) {
-                const targetId = intersects[0].object.userData.targetId;
-                if (targetId) loadScene(targetId);
-            }
-        }
-
         function renderLoop() {
+            let hoveredObject = null;
             if (!renderer.xr.isPresenting) {
                 controls.update();
                 raycaster.setFromCamera(pointer, camera);
-                
-                const fovScale = camera.fov / 75;
-                const hits = raycaster.intersectObjects(hotspots3D);
-                
-                hotspots3D.forEach(h => {
-                    const b = 45 * (h.userData.base || 1);
-                    h.scale.set(b * fovScale, b * fovScale, 1);
-                });
-
-                if (hits.length > 0) {
-                    const h = hits[0].object;
-                    const hv = 55 * (h.userData.base || 1);
-                    h.scale.set(hv * fovScale, hv * fovScale, 1);
-                }
+                const intersects = raycaster.intersectObjects(hotspots3D);
+                if (intersects.length > 0) hoveredObject = intersects[0].object;
             } else {
-                // VR Mode: Reduce hotspot scale so they don't look huge
-                hotspots3D.forEach(h => {
-                    const vrScale = 15 * (h.userData.base || 1); 
-                    h.scale.set(vrScale, vrScale, 1);
+                [controller1, controller2].forEach(ctrl => {
+                    const tempMatrix = new THREE.Matrix4();
+                    tempMatrix.identity().extractRotation(ctrl.matrixWorld);
+                    raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+                    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+                    const intersects = raycaster.intersectObjects(hotspots3D);
+                    if (intersects.length > 0) hoveredObject = intersects[0].object;
                 });
             }
+
+            const isVR = renderer.xr.isPresenting;
+            const fovScale = isVR ? 1 : camera.fov / 75;
+            const baseS = isVR ? 15 : 45;
+            const hoverS = isVR ? 20 : 55;
+
+            hotspots3D.forEach(h => {
+                const targetScale = (h === hoveredObject) ? hoverS : baseS;
+                const s = targetScale * (h.userData.base || 1) * fovScale;
+                h.scale.set(s, s, 1);
+            });
+
             renderer.render(scene, camera);
         }
 
@@ -215,20 +173,14 @@
                 sphere.material.color.set(0xffffff);
                 sphere.material.needsUpdate = true;
                 
-                if (data.initialView && !renderer.xr.isPresenting) {
-                    const yaw = data.initialView.yaw || 0;
-                    const pitch = data.initialView.pitch || 0;
-                    const radius = 0.1; 
-                    camera.position.set(
-                        radius * Math.sin(yaw) * Math.cos(pitch),
-                        radius * Math.sin(pitch),
-                        radius * Math.cos(yaw) * Math.cos(pitch)
-                    );
-                    controls.update(); 
-                } else {
-                    camera.position.set(0, 0, 0.1);
-                    controls.update();
-                }
+                // --- FIX PART 3: RE-SYNC ON EVERY LOAD ---
+                const yaw = (data.initialView && data.initialView.yaw) || 0;
+                const pitch = (data.initialView && data.initialView.pitch) || 0;
+                
+                const r = 0.1; 
+                camera.position.set(r * Math.sin(yaw) * Math.cos(pitch), r * Math.sin(pitch), r * Math.cos(yaw) * Math.cos(pitch));
+                controls.target.set(0, 0, 0); // Re-anchor target
+                controls.update(); // Synchronize immediately
             });
 
             hotspots3D.forEach(h => scene.remove(h));
@@ -237,15 +189,28 @@
             const loader = new THREE.TextureLoader();
             data.hotspots.forEach(hs => {
                 loader.load(hs.icon, (tex) => {
-                    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-                    const sprite = new THREE.Sprite(mat);
-                    sprite.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
-                    sprite.userData.targetId = hs.targetSceneId;
-                    sprite.userData.base = hs.scale || 1;
-                    scene.add(sprite);
-                    hotspots3D.push(sprite);
+                    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
+                    const geom = new THREE.PlaneGeometry(1, 1);
+                    const mesh = new THREE.Mesh(geom, mat);
+                    mesh.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
+                    mesh.lookAt(0, 0, 0); // Static orientation
+                    mesh.userData.targetId = hs.targetSceneId;
+                    mesh.userData.base = hs.scale || 1;
+                    scene.add(mesh);
+                    hotspots3D.push(mesh);
                 });
             });
+        }
+
+        function onPointerDown(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects(hotspots3D);
+            if (intersects.length > 0) {
+                const targetId = intersects[0].object.userData.targetId;
+                if (targetId) loadScene(targetId);
+            }
         }
     </script>
 </body>
