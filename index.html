@@ -3,22 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 Virtual Tour - Professional Marine</title>
+    <title>360 VR Tour - Professional Marine</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #viewer { width: 100vw; height: 100vh; touch-action: none; }
-        .ui-overlay {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 10px; z-index: 2000;
+        #emergency-vr-btn {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            padding: 18px 36px; background: #ef4444; color: white; border: none;
+            border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6); display: none;
         }
-        button {
-            padding: 12px 20px; border: none; border-radius: 8px; font-weight: bold;
-            cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.4);
-            transition: transform 0.2s;
-        }
-        button:active { transform: scale(0.95); }
-        #set-default-btn { background: #10b981; color: white; }
-        #emergency-vr-btn { background: #ef4444; color: white; display: none; }
         #room-label {
             position: absolute; top: 20px; left: 20px; color: white;
             background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 6px;
@@ -31,11 +25,7 @@
 <body>
     <div id="viewer"></div>
     <div id="room-label">LOADING...</div>
-    
-    <div class="ui-overlay">
-        <button id="set-default-btn">SET CURRENT VIEW AS DEFAULT</button>
-        <button id="emergency-vr-btn">ENTER VR</button>
-    </div>
+    <button id="emergency-vr-btn">ENTER VR</button>
 
     <script>
         const tourData = {"scenes":[{"id":"scene-1766578310949-0","name":"2","image":"images/scene-1766578310949-0.jpg","hotspots":[{"id":"hotspot-1766578317415","position":[-1.7880416517426136,67.05156194034883,-495.07201525267925],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578324563","position":[-496.49668413655905,-37.52640354795391,-38.71377282539662],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310952-1","name":"3","image":"images/scene-1766578310952-1.jpg","hotspots":[{"id":"hotspot-1766578330382","position":[268.51287924761647,-61.31558242732452,416.042352097742],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578333890","position":[275.6862386446213,3.6748517634885483,-416.1599354953487],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310954-2","name":"BACKGROUND","image":"images/scene-1766578310954-2.jpg","hotspots":[{"id":"hotspot-1766578338004","position":[-78.98764378248819,66.10941715247557,-488.2532938864092],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578341612","position":[139.03891719062557,-30.867974683876287,478.41946035854636],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1}],"initialView":{"yaw":0.4028626613354817,"pitch":1.655804071366112}}]};
@@ -43,12 +33,12 @@
         let raycaster = new THREE.Raycaster();
         let pointer = new THREE.Vector2();
         let hotspots3D = [];
-        let currentSceneId = null;
-
-        // Interaction state
+        
+        // Variables for Pinch-to-Zoom
         let initialPinchDistance = 0;
         let initialFOV = 75;
 
+        // XR Check
         if ('xr' in navigator) {
             navigator.xr.isSessionSupported('immersive-vr').then(s => {
                 if(s) document.getElementById('emergency-vr-btn').style.display = 'block';
@@ -61,17 +51,23 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
+                            canvas.getContext('webgl', { xrCompatible: true });
+            
+            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.xr.enabled = true; 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
+            // --- THE FIX FOR POINT 2: INSTANT ROTATION ---
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.rotateSpeed = -0.4;
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.enableZoom = false; 
+            // Set an explicit target and update immediately
             controls.target.set(0, 0, 0);
             controls.update();
 
@@ -80,11 +76,10 @@
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
-            // Listeners
-            window.addEventListener('pointermove', onPointerMove);
+            // Desktop Mouse Listeners
             window.addEventListener('pointerdown', onPointerDown);
             
-            // Zoom Listeners
+            // Mouse Wheel Zoom
             renderer.domElement.addEventListener('wheel', (e) => {
                 if (renderer.xr.isPresenting) return;
                 camera.fov += e.deltaY * 0.05;
@@ -92,49 +87,55 @@
                 camera.updateProjectionMatrix();
             }, { passive: true });
 
+            // --- MOBILE PINCH TO ZOOM ---
             renderer.domElement.addEventListener('touchstart', (e) => {
                 if (e.touches.length === 2) {
-                    initialPinchDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    initialPinchDistance = Math.hypot(
+                        e.touches[0].pageX - e.touches[1].pageX,
+                        e.touches[0].pageY - e.touches[1].pageY
+                    );
                     initialFOV = camera.fov;
                 }
             }, { passive: false });
 
             renderer.domElement.addEventListener('touchmove', (e) => {
                 if (e.touches.length === 2) {
-                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                    camera.fov = Math.max(30, Math.min(100, initialFOV + (initialPinchDistance - dist) * 0.1));
+                    const currentDistance = Math.hypot(
+                        e.touches[0].pageX - e.touches[1].pageX,
+                        e.touches[0].pageY - e.touches[1].pageY
+                    );
+                    const delta = initialPinchDistance - currentDistance;
+                    camera.fov = initialFOV + (delta * 0.1);
+                    camera.fov = Math.max(30, Math.min(100, camera.fov));
                     camera.updateProjectionMatrix();
                 }
             }, { passive: false });
 
-            // Button Logic
             document.getElementById('emergency-vr-btn').onclick = () => {
                 navigator.xr.requestSession('immersive-vr').then(s => renderer.xr.setSession(s));
             };
 
-            document.getElementById('set-default-btn').onclick = () => {
-                // Calculate current Euler angles to save
-                const yaw = Math.atan2(camera.position.x, camera.position.z);
-                const pitch = Math.atan2(camera.position.y, Math.sqrt(camera.position.x**2 + camera.position.z**2));
-                
-                // Communicate with the parent editor if needed or just update locally
-                console.log(`Saved View for ${currentSceneId}: Yaw ${yaw}, Pitch ${pitch}`);
-                const sceneObj = tourData.scenes.find(s => s.id === currentSceneId);
-                if (sceneObj) sceneObj.initialView = { yaw, pitch };
-                alert("View position captured for this scene!");
-            };
-
             if (tourData.scenes.length > 0) loadScene(tourData.scenes[0].id);
 
-            renderer.setAnimationLoop(renderLoop);
-        }
+            renderer.setAnimationLoop(() => {
+                if (!renderer.xr.isPresenting) {
+                    controls.update();
+                    // Keep hotspots consistent with FOV
+                    const scaleFactor = camera.fov / 75; 
+                    hotspots3D.forEach(h => {
+                        const baseScale = 25 * (h.userData.baseScale || 1); // Point 1: +25% default
+                        h.scale.set(baseScale * scaleFactor, baseScale * scaleFactor, 1);
+                    });
+                }
+                renderer.render(scene, camera);
+            });
 
-        function onPointerMove(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            window.addEventListener('resize', onResize);
         }
 
         function onPointerDown(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(pointer, camera);
             const intersects = raycaster.intersectObjects(hotspots3D);
             if (intersects.length > 0) {
@@ -143,31 +144,7 @@
             }
         }
 
-        function renderLoop() {
-            if (!renderer.xr.isPresenting) {
-                controls.update();
-                raycaster.setFromCamera(pointer, camera);
-                
-                // --- HOVER ANIMATION ---
-                const scaleFactor = camera.fov / 75; 
-                const intersects = raycaster.intersectObjects(hotspots3D);
-                
-                hotspots3D.forEach(h => {
-                    const base = 25 * (h.userData.baseScale || 1);
-                    h.scale.set(base * scaleFactor, base * scaleFactor, 1);
-                });
-
-                if (intersects.length > 0) {
-                    const h = intersects[0].object;
-                    const hover = 32 * (h.userData.baseScale || 1); // Scale up on hover
-                    h.scale.set(hover * scaleFactor, hover * scaleFactor, 1);
-                }
-            }
-            renderer.render(scene, camera);
-        }
-
         function loadScene(id) {
-            currentSceneId = id;
             const data = tourData.scenes.find(s => s.id === id);
             document.getElementById('room-label').innerText = data.name;
 
@@ -181,7 +158,7 @@
                     const yaw = data.initialView.yaw || 0;
                     const pitch = data.initialView.pitch || 0;
                     camera.position.set(0.1 * Math.sin(yaw), 0.1 * Math.sin(pitch), 0.1 * Math.cos(yaw));
-                    controls.update();
+                    controls.update(); // Sync controls to new position
                 }
             });
 
@@ -201,6 +178,12 @@
                     hotspots3D.push(sprite);
                 });
             });
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         }
     </script>
 </body>
