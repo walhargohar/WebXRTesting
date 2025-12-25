@@ -6,7 +6,7 @@
     <title>360 Virtual Tour</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        #viewer { width: 100vw; height: 100vh; touch-action: none; }
+        #viewer { width: 100vw; height: 100vh; touch-action: none; background: #000; }
         #room-label {
             position: absolute; top: 20px; left: 20px; color: white;
             background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 6px;
@@ -16,7 +16,7 @@
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             padding: 18px 36px; background: #ef4444; color: white; border: none;
             border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
-            display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            display: none;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -30,13 +30,10 @@
     <script>
         const tourData = {"scenes":[{"id":"scene-1766578310949-0","name":"2","image":"images/scene-1766578310949-0.jpg","hotspots":[{"id":"hotspot-1766578317415","position":[-1.7880416517426136,67.05156194034883,-495.07201525267925],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578324563","position":[-496.49668413655905,-37.52640354795391,-38.71377282539662],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310952-1","name":"3","image":"images/scene-1766578310952-1.jpg","hotspots":[{"id":"hotspot-1766578330382","position":[268.51287924761647,-61.31558242732452,416.042352097742],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578333890","position":[275.6862386446213,3.6748517634885483,-416.1599354953487],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310954-2","name":"BACKGROUND","image":"images/scene-1766578310954-2.jpg","hotspots":[{"id":"hotspot-1766578338004","position":[-78.98764378248819,66.10941715247557,-488.2532938864092],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578341612","position":[139.03891719062557,-30.867974683876287,478.41946035854636],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1}],"initialView":{"yaw":0.4028626613354817,"pitch":1.655804071366112}}]};
         let scene, camera, renderer, controls, sphere;
-        let raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+        let raycaster = new THREE.Raycaster();
+        let pointer = new THREE.Vector2();
         let hotspots3D = [];
         
-        // Mobile State
-        let initialPinchDistance = 0, initialFOV = 75;
-
-        // XR Support Check
         if ('xr' in navigator) {
             navigator.xr.isSessionSupported('immersive-vr').then(supported => {
                 if (supported) document.getElementById('emergency-vr-btn').style.display = 'block';
@@ -49,7 +46,6 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // XR-Compatible Setup for Quest
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
                             canvas.getContext('webgl', { xrCompatible: true });
@@ -68,17 +64,16 @@
             controls.target.set(0, 0, 0);
 
             const geometry = new THREE.SphereGeometry(500, 60, 40);
-            const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x111111 });
+            const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0xffffff });
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
-            // Interaction
             window.addEventListener('pointerdown', (e) => {
                 raycaster.setFromCamera(pointer, camera);
                 const intersects = raycaster.intersectObjects(hotspots3D);
                 if (intersects.length > 0) {
-                    const tid = intersects[0].object.userData.targetId;
-                    if (tid) loadScene(tid);
+                    const targetId = intersects[0].object.userData.targetId;
+                    if (targetId) loadScene(targetId);
                 }
             });
 
@@ -86,22 +81,6 @@
                 pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
                 pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
             });
-
-            // Mobile Pinch-to-Zoom logic
-            renderer.domElement.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 2) {
-                    initialPinchDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                    initialFOV = camera.fov;
-                }
-            }, { passive: false });
-
-            renderer.domElement.addEventListener('touchmove', (e) => {
-                if (e.touches.length === 2) {
-                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                    camera.fov = Math.max(30, Math.min(100, initialFOV + (initialPinchDistance - dist) * 0.1));
-                    camera.updateProjectionMatrix();
-                }
-            }, { passive: false });
 
             document.getElementById('emergency-vr-btn').onclick = () => {
                 navigator.xr.requestSession('immersive-vr', {
@@ -119,7 +98,7 @@
                 raycaster.setFromCamera(pointer, camera);
                 const fovScale = camera.fov / 75;
                 hotspots3D.forEach(h => {
-                    const b = 32 * (h.userData.base || 1);
+                    const b = 30 * (h.userData.base || 1);
                     h.scale.set(b * fovScale, b * fovScale, 1);
                 });
             }
@@ -135,7 +114,6 @@
                 sphere.material.map = tex;
                 sphere.material.needsUpdate = true;
                 
-                // Position Sync
                 if (data.initialView && !renderer.xr.isPresenting) {
                     const { yaw, pitch } = data.initialView;
                     const r = 0.1; 
