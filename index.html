@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 Virtual Tour V2</title>
+    <title>360 VR Tour - Yacht Specialist</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #viewer { width: 100vw; height: 100vh; touch-action: none; }
@@ -16,8 +16,6 @@
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             padding: 18px 36px; background: #ef4444; color: white; border: none;
             border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
-            display: none; /* Hide until support confirmed  */
-            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -35,13 +33,12 @@
         let pointer = new THREE.Vector2();
         let hotspots3D = [];
         
-        // Mobile Zoom State
-        let initialPinchDistance = 0, initialFOV = 75;
+        let initialPinchDistance = 0;
+        let initialFOV = 75;
 
-        // --- WEBXR SUPPORT CHECK ---
         if ('xr' in navigator) {
-            navigator.xr.isSessionSupported('immersive-vr').then(supported => {
-                if (supported) document.getElementById('emergency-vr-btn').style.display = 'block';
+            navigator.xr.isSessionSupported('immersive-vr').then(s => {
+                if(s) document.getElementById('emergency-vr-btn').style.display = 'block';
             });
         }
 
@@ -51,17 +48,13 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // --- FIX: XR COMPATIBLE CONTEXT  ---
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
-                            canvas.getContext('webgl', { xrCompatible: true });
-            
-            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true, powerPreference: "high-performance" });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.xr.enabled = true; 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
+            // Controls setup
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.rotateSpeed = -0.4;
             controls.enableDamping = true;
@@ -74,14 +67,15 @@
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
-            // Interaction Listeners
             window.addEventListener('pointerdown', onPointerDown);
-            window.addEventListener('pointermove', (e) => {
-                pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
-                pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
-            });
+            window.addEventListener('pointermove', onPointerMove);
             
-            // Pinch-to-Zoom logic
+            renderer.domElement.addEventListener('wheel', (e) => {
+                if (renderer.xr.isPresenting) return;
+                camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.05));
+                camera.updateProjectionMatrix();
+            }, { passive: true });
+
             renderer.domElement.addEventListener('touchstart', (e) => {
                 if (e.touches.length === 2) {
                     initialPinchDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
@@ -98,13 +92,18 @@
             }, { passive: false });
 
             document.getElementById('emergency-vr-btn').onclick = () => {
-                navigator.xr.requestSession('immersive-vr', {
-                    optionalFeatures: ['local-floor', 'bounded-floor']
-                }).then(s => renderer.xr.setSession(s));
+                navigator.xr.requestSession('immersive-vr').then(s => renderer.xr.setSession(s));
             };
 
+            // LOAD FIRST SCENE
             if (tourData.scenes.length > 0) loadScene(tourData.scenes[0].id);
+
             renderer.setAnimationLoop(renderLoop);
+        }
+
+        function onPointerMove(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
         }
 
         function onPointerDown(event) {
@@ -121,13 +120,14 @@
                 controls.update();
                 raycaster.setFromCamera(pointer, camera);
                 
-                // Dynamic scale and hover effects
                 const fovScale = camera.fov / 75;
                 const hits = raycaster.intersectObjects(hotspots3D);
+                
                 hotspots3D.forEach(h => {
                     const b = 30 * (h.userData.base || 1);
                     h.scale.set(b * fovScale, b * fovScale, 1);
                 });
+
                 if (hits.length > 0) {
                     const h = hits[0].object;
                     const hv = 42 * (h.userData.base || 1);
@@ -144,18 +144,26 @@
             new THREE.TextureLoader().load(data.image, (tex) => {
                 tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
                 sphere.material.map = tex;
+                sphere.material.color.set(0xffffff);
                 sphere.material.needsUpdate = true;
                 
-                // --- POSITION SYNC: Match Builder calculation  ---
+                // --- THE CRITICAL FIX ---
+                // We set the position AND immediately call controls.update() 
+                // inside the texture callback to ensure it sticks
                 if (data.initialView && !renderer.xr.isPresenting) {
                     const yaw = data.initialView.yaw || 0;
                     const pitch = data.initialView.pitch || 0;
-                    const r = 0.1; 
+                    
+                    // Reset camera position based on yaw/pitch
+                    const radius = 0.1; 
                     camera.position.set(
-                        r * Math.sin(yaw) * Math.cos(pitch),
-                        r * Math.sin(pitch),
-                        r * Math.cos(yaw) * Math.cos(pitch)
+                        radius * Math.sin(yaw) * Math.cos(pitch),
+                        radius * Math.sin(pitch),
+                        radius * Math.cos(yaw) * Math.cos(pitch)
                     );
+                    controls.update(); // Synchronizes the internal state of OrbitControls
+                } else {
+                    camera.position.set(0, 0, 0.1);
                     controls.update();
                 }
             });
