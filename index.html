@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 VR Tour - Yacht Specialist</title>
+    <title>360 Virtual Tour</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #viewer { width: 100vw; height: 100vh; touch-action: none; }
@@ -16,6 +16,7 @@
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             padding: 18px 36px; background: #ef4444; color: white; border: none;
             border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
+            display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -33,12 +34,12 @@
         let pointer = new THREE.Vector2();
         let hotspots3D = [];
         
-        let initialPinchDistance = 0;
-        let initialFOV = 75;
+        let initialPinchDistance = 0, initialFOV = 75;
 
+        // Check for WebXR support
         if ('xr' in navigator) {
-            navigator.xr.isSessionSupported('immersive-vr').then(s => {
-                if(s) document.getElementById('emergency-vr-btn').style.display = 'block';
+            navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                if (supported) document.getElementById('emergency-vr-btn').style.display = 'block';
             });
         }
 
@@ -48,13 +49,17 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            // FIX: Forced WebGL2 with XR Compatibility for Meta Quest
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
+                            canvas.getContext('webgl', { xrCompatible: true });
+            
+            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.xr.enabled = true; 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // Controls setup
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.rotateSpeed = -0.4;
             controls.enableDamping = true;
@@ -67,8 +72,19 @@
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
-            window.addEventListener('pointerdown', onPointerDown);
-            window.addEventListener('pointermove', onPointerMove);
+            // Interaction listeners
+            window.addEventListener('pointerdown', (e) => {
+                raycaster.setFromCamera(pointer, camera);
+                const intersects = raycaster.intersectObjects(hotspots3D);
+                if (intersects.length > 0) {
+                    const targetId = intersects[0].object.userData.targetId;
+                    if (targetId) loadScene(targetId);
+                }
+            });
+            window.addEventListener('pointermove', (e) => {
+                pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+                pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
             
             renderer.domElement.addEventListener('wheel', (e) => {
                 if (renderer.xr.isPresenting) return;
@@ -76,63 +92,25 @@
                 camera.updateProjectionMatrix();
             }, { passive: true });
 
-            renderer.domElement.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 2) {
-                    initialPinchDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                    initialFOV = camera.fov;
-                }
-            }, { passive: false });
-
-            renderer.domElement.addEventListener('touchmove', (e) => {
-                if (e.touches.length === 2) {
-                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                    camera.fov = Math.max(30, Math.min(100, initialFOV + (initialPinchDistance - dist) * 0.1));
-                    camera.updateProjectionMatrix();
-                }
-            }, { passive: false });
-
             document.getElementById('emergency-vr-btn').onclick = () => {
-                navigator.xr.requestSession('immersive-vr').then(s => renderer.xr.setSession(s));
+                navigator.xr.requestSession('immersive-vr', {
+                    optionalFeatures: ['local-floor', 'bounded-floor']
+                }).then(s => renderer.xr.setSession(s));
             };
 
-            // LOAD FIRST SCENE
             if (tourData.scenes.length > 0) loadScene(tourData.scenes[0].id);
-
             renderer.setAnimationLoop(renderLoop);
-        }
-
-        function onPointerMove(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        }
-
-        function onPointerDown(event) {
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(hotspots3D);
-            if (intersects.length > 0) {
-                const targetId = intersects[0].object.userData.targetId;
-                if (targetId) loadScene(targetId);
-            }
         }
 
         function renderLoop() {
             if (!renderer.xr.isPresenting) {
                 controls.update();
                 raycaster.setFromCamera(pointer, camera);
-                
                 const fovScale = camera.fov / 75;
-                const hits = raycaster.intersectObjects(hotspots3D);
-                
                 hotspots3D.forEach(h => {
                     const b = 30 * (h.userData.base || 1);
                     h.scale.set(b * fovScale, b * fovScale, 1);
                 });
-
-                if (hits.length > 0) {
-                    const h = hits[0].object;
-                    const hv = 42 * (h.userData.base || 1);
-                    h.scale.set(hv * fovScale, hv * fovScale, 1);
-                }
             }
             renderer.render(scene, camera);
         }
@@ -144,33 +122,23 @@
             new THREE.TextureLoader().load(data.image, (tex) => {
                 tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
                 sphere.material.map = tex;
-                sphere.material.color.set(0xffffff);
                 sphere.material.needsUpdate = true;
                 
-                // --- THE CRITICAL FIX ---
-                // We set the position AND immediately call controls.update() 
-                // inside the texture callback to ensure it sticks
+                // Position Sync: Match Builder exactly
                 if (data.initialView && !renderer.xr.isPresenting) {
-                    const yaw = data.initialView.yaw || 0;
-                    const pitch = data.initialView.pitch || 0;
-                    
-                    // Reset camera position based on yaw/pitch
-                    const radius = 0.1; 
+                    const { yaw, pitch } = data.initialView;
+                    const r = 0.1; 
                     camera.position.set(
-                        radius * Math.sin(yaw) * Math.cos(pitch),
-                        radius * Math.sin(pitch),
-                        radius * Math.cos(yaw) * Math.cos(pitch)
+                        r * Math.sin(yaw) * Math.cos(pitch),
+                        r * Math.sin(pitch),
+                        r * Math.cos(yaw) * Math.cos(pitch)
                     );
-                    controls.update(); // Synchronizes the internal state of OrbitControls
-                } else {
-                    camera.position.set(0, 0, 0.1);
                     controls.update();
                 }
             });
 
             hotspots3D.forEach(h => scene.remove(h));
             hotspots3D = [];
-
             const loader = new THREE.TextureLoader();
             data.hotspots.forEach(hs => {
                 loader.load(hs.icon, (tex) => {
