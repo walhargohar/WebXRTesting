@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 Virtual Tour</title>
+    <title>360 Virtual Tour V2</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #viewer { width: 100vw; height: 100vh; touch-action: none; }
@@ -16,7 +16,8 @@
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             padding: 18px 36px; background: #ef4444; color: white; border: none;
             border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
-            display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            display: none; /* Hide until support confirmed  */
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -34,9 +35,10 @@
         let pointer = new THREE.Vector2();
         let hotspots3D = [];
         
+        // Mobile Zoom State
         let initialPinchDistance = 0, initialFOV = 75;
 
-        // Check for WebXR support
+        // --- WEBXR SUPPORT CHECK ---
         if ('xr' in navigator) {
             navigator.xr.isSessionSupported('immersive-vr').then(supported => {
                 if (supported) document.getElementById('emergency-vr-btn').style.display = 'block';
@@ -49,12 +51,12 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // FIX: Forced WebGL2 with XR Compatibility for Meta Quest
+            // --- FIX: XR COMPATIBLE CONTEXT  ---
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
                             canvas.getContext('webgl', { xrCompatible: true });
             
-            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true });
+            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.xr.enabled = true; 
@@ -72,25 +74,28 @@
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
 
-            // Interaction listeners
-            window.addEventListener('pointerdown', (e) => {
-                raycaster.setFromCamera(pointer, camera);
-                const intersects = raycaster.intersectObjects(hotspots3D);
-                if (intersects.length > 0) {
-                    const targetId = intersects[0].object.userData.targetId;
-                    if (targetId) loadScene(targetId);
-                }
-            });
+            // Interaction Listeners
+            window.addEventListener('pointerdown', onPointerDown);
             window.addEventListener('pointermove', (e) => {
                 pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
                 pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
             });
             
-            renderer.domElement.addEventListener('wheel', (e) => {
-                if (renderer.xr.isPresenting) return;
-                camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.05));
-                camera.updateProjectionMatrix();
-            }, { passive: true });
+            // Pinch-to-Zoom logic
+            renderer.domElement.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    initialPinchDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    initialFOV = camera.fov;
+                }
+            }, { passive: false });
+
+            renderer.domElement.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2) {
+                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    camera.fov = Math.max(30, Math.min(100, initialFOV + (initialPinchDistance - dist) * 0.1));
+                    camera.updateProjectionMatrix();
+                }
+            }, { passive: false });
 
             document.getElementById('emergency-vr-btn').onclick = () => {
                 navigator.xr.requestSession('immersive-vr', {
@@ -102,15 +107,32 @@
             renderer.setAnimationLoop(renderLoop);
         }
 
+        function onPointerDown(event) {
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects(hotspots3D);
+            if (intersects.length > 0) {
+                const targetId = intersects[0].object.userData.targetId;
+                if (targetId) loadScene(targetId);
+            }
+        }
+
         function renderLoop() {
             if (!renderer.xr.isPresenting) {
                 controls.update();
                 raycaster.setFromCamera(pointer, camera);
+                
+                // Dynamic scale and hover effects
                 const fovScale = camera.fov / 75;
+                const hits = raycaster.intersectObjects(hotspots3D);
                 hotspots3D.forEach(h => {
                     const b = 30 * (h.userData.base || 1);
                     h.scale.set(b * fovScale, b * fovScale, 1);
                 });
+                if (hits.length > 0) {
+                    const h = hits[0].object;
+                    const hv = 42 * (h.userData.base || 1);
+                    h.scale.set(hv * fovScale, hv * fovScale, 1);
+                }
             }
             renderer.render(scene, camera);
         }
@@ -124,9 +146,10 @@
                 sphere.material.map = tex;
                 sphere.material.needsUpdate = true;
                 
-                // Position Sync: Match Builder exactly
+                // --- POSITION SYNC: Match Builder calculation  ---
                 if (data.initialView && !renderer.xr.isPresenting) {
-                    const { yaw, pitch } = data.initialView;
+                    const yaw = data.initialView.yaw || 0;
+                    const pitch = data.initialView.pitch || 0;
                     const r = 0.1; 
                     camera.position.set(
                         r * Math.sin(yaw) * Math.cos(pitch),
@@ -139,6 +162,7 @@
 
             hotspots3D.forEach(h => scene.remove(h));
             hotspots3D = [];
+
             const loader = new THREE.TextureLoader();
             data.hotspots.forEach(hs => {
                 loader.load(hs.icon, (tex) => {
