@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 VR Tour - V4</title>
+    <title>360 VR Tour - Yacht Specialist</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #viewer { width: 100vw; height: 100vh; touch-action: none; }
@@ -28,7 +28,7 @@
     <button id="emergency-vr-btn">ENTER VR</button>
 
     <script>
-        const tourData = {"scenes":[{"id":"scene-1766578310949-0","name":"2","image":"images/scene-1766578310949-0.jpg","hotspots":[{"id":"hotspot-1766578317415","position":[-1.7880416517426136,67.05156194034883,-495.07201525267925],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578324563","position":[-496.49668413655905,-37.52640354795391,-38.71377282539662],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310952-1","name":"3","image":"images/scene-1766578310952-1.jpg","hotspots":[{"id":"hotspot-1766578330382","position":[268.51287924761647,-61.31558242732452,416.042352097742],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578333890","position":[275.6862386446213,3.6748517634885483,-416.1599354953487],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}]},{"id":"scene-1766578310954-2","name":"BACKGROUND","image":"images/scene-1766578310954-2.jpg","hotspots":[{"id":"hotspot-1766578338004","position":[-78.98764378248819,66.10941715247557,-488.2532938864092],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578341612","position":[139.03891719062557,-30.867974683876287,478.41946035854636],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1}],"initialView":{"yaw":0.4028626613354817,"pitch":1.655804071366112}}]};
+        const tourData = {"scenes":[{"id":"scene-1766578310949-0","name":"2","image":"images/scene-1766578310949-0.jpg","hotspots":[{"id":"hotspot-1766578317415","position":[-1.7880416517426136,67.05156194034883,-495.07201525267925],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578324563","position":[-496.49668413655905,-37.52640354795391,-38.71377282539662],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}],"initialView":{"yaw":0,"pitch":6.123233995736766e-17}},{"id":"scene-1766578310952-1","name":"3","image":"images/scene-1766578310952-1.jpg","hotspots":[{"id":"hotspot-1766578330382","position":[268.51287924761647,-61.31558242732452,416.042352097742],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578333890","position":[275.6862386446213,3.6748517634885483,-416.1599354953487],"targetSceneId":"scene-1766578310954-2","icon":"icons/01.png","scale":1}],"initialView":{"yaw":-1.3157724842479068,"pitch":-0.2956791084996839}},{"id":"scene-1766578310954-2","name":"BACKGROUND","image":"images/scene-1766578310954-2.jpg","hotspots":[{"id":"hotspot-1766578338004","position":[-78.98764378248819,66.10941715247557,-488.2532938864092],"targetSceneId":"scene-1766578310949-0","icon":"icons/01.png","scale":1},{"id":"hotspot-1766578341612","position":[139.03891719062557,-30.867974683876287,478.41946035854636],"targetSceneId":"scene-1766578310952-1","icon":"icons/01.png","scale":1}],"initialView":{"yaw":-2.9272255677238825,"pitch":-0.07391898954963633}}]};
         let scene, camera, renderer, controls, sphere;
         let raycaster = new THREE.Raycaster();
         let pointer = new THREE.Vector2();
@@ -164,43 +164,55 @@
         }
 
         function loadScene(id) {
-            const data = tourData.scenes.find(s => s.id === id);
-            document.getElementById('room-label').innerText = data.name;
+    const data = tourData.scenes.find(s => s.id === id);
+    document.getElementById('room-label').innerText = data.name;
 
-            new THREE.TextureLoader().load(data.image, (tex) => {
-                tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
-                sphere.material.map = tex;
-                sphere.material.color.set(0xffffff);
-                sphere.material.needsUpdate = true;
-                
-                // --- FIX PART 3: RE-SYNC ON EVERY LOAD ---
-                const yaw = (data.initialView && data.initialView.yaw) || 0;
-                const pitch = (data.initialView && data.initialView.pitch) || 0;
-                
-                const r = 0.1; 
-                camera.position.set(r * Math.sin(yaw) * Math.cos(pitch), r * Math.sin(pitch), r * Math.cos(yaw) * Math.cos(pitch));
-                controls.target.set(0, 0, 0); // Re-anchor target
-                controls.update(); // Synchronize immediately
-            });
+    new THREE.TextureLoader().load(data.image, (tex) => {
+        tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
+        sphere.material.map = tex;
+        sphere.material.color.set(0xffffff);
+        sphere.material.needsUpdate = true;
+        
+        const yaw = (data.initialView && data.initialView.yaw) || 0;
+        const pitch = (data.initialView && data.initialView.pitch) || 0;
 
-            hotspots3D.forEach(h => scene.remove(h));
-            hotspots3D = [];
-
-            const loader = new THREE.TextureLoader();
-            data.hotspots.forEach(hs => {
-                loader.load(hs.icon, (tex) => {
-                    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
-                    const geom = new THREE.PlaneGeometry(1, 1);
-                    const mesh = new THREE.Mesh(geom, mat);
-                    mesh.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
-                    mesh.lookAt(0, 0, 0); // Static orientation
-                    mesh.userData.targetId = hs.targetSceneId;
-                    mesh.userData.base = hs.scale || 1;
-                    scene.add(mesh);
-                    hotspots3D.push(mesh);
-                });
-            });
+        if (!renderer.xr.isPresenting) {
+            // STANDARD 2D PC/MOBILE LOGIC 
+            const r = 0.1; 
+            camera.position.set(
+                r * Math.sin(yaw) * Math.cos(pitch), 
+                r * Math.sin(pitch), 
+                r * Math.cos(yaw) * Math.cos(pitch)
+            );
+            controls.target.set(0, 0, 0);
+            controls.update(); 
+        } else {
+            // --- NEW: VR IMMERSIVE FIX --- 
+            // In VR, we rotate the sphere instead of the camera.
+            // This ensures the "Forward" direction in VR matches your Default View.
+            sphere.rotation.y = -yaw; 
+            // Note: We usually don't rotate pitch in VR to avoid making users feel dizzy.
         }
+    });
+
+    // ... (rest of your hotspot loading code remains exactly the same) 
+    hotspots3D.forEach(h => scene.remove(h));
+    hotspots3D = [];
+    const loader = new THREE.TextureLoader();
+    data.hotspots.forEach(hs => {
+        loader.load(hs.icon, (tex) => {
+            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
+            const geom = new THREE.PlaneGeometry(1, 1);
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
+            mesh.lookAt(0, 0, 0); 
+            mesh.userData.targetId = hs.targetSceneId;
+            mesh.userData.base = hs.scale || 1;
+            scene.add(mesh);
+            hotspots3D.push(mesh);
+        });
+    });
+}
 
         function onPointerDown(event) {
             pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
