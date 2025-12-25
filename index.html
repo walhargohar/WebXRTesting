@@ -48,6 +48,9 @@
         function startEngine() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+	    scene = new THREE.Scene();
+	    worldGroup = new THREE.Group();
+            scene.add(worldGroup);
             
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
@@ -74,7 +77,7 @@
             const geometry = new THREE.SphereGeometry(500, 60, 40);
             const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x111111 });
             sphere = new THREE.Mesh(geometry, material);
-            scene.add(sphere);
+            worldGroup.add(sphere);
 
             window.addEventListener('pointerdown', onPointerDown);
             window.addEventListener('pointermove', (e) => {
@@ -177,7 +180,8 @@
         const pitch = (data.initialView && data.initialView.pitch) || 0;
 
         if (!renderer.xr.isPresenting) {
-            // STANDARD 2D PC/MOBILE LOGIC 
+            // PC/MOBILE: Rotate camera, keep world at zero
+            worldGroup.rotation.y = 0; 
             const r = 0.1; 
             camera.position.set(
                 r * Math.sin(yaw) * Math.cos(pitch), 
@@ -187,28 +191,31 @@
             controls.target.set(0, 0, 0);
             controls.update(); 
         } else {
-            // --- NEW: VR IMMERSIVE FIX --- 
-            // In VR, we rotate the sphere instead of the camera.
-            // This ensures the "Forward" direction in VR matches your Default View.
-            sphere.rotation.y = -yaw; 
-            // Note: We usually don't rotate pitch in VR to avoid making users feel dizzy.
+            // VR: Keep camera at zero, rotate the entire world group
+            // This ensures hotspots and the sphere move together
+            worldGroup.rotation.y = -yaw; 
         }
     });
 
-    // ... (rest of your hotspot loading code remains exactly the same) 
-    hotspots3D.forEach(h => scene.remove(h));
+    // Clear and reload hotspots
+    hotspots3D.forEach(h => worldGroup.remove(h)); // Remove from group
     hotspots3D = [];
     const loader = new THREE.TextureLoader();
+    
     data.hotspots.forEach(hs => {
         loader.load(hs.icon, (tex) => {
             const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
             const geom = new THREE.PlaneGeometry(1, 1);
             const mesh = new THREE.Mesh(geom, mat);
-            mesh.position.copy(new THREE.Vector3(...hs.position).multiplyScalar(0.9));
+            
+            const pos = new THREE.Vector3(...hs.position).multiplyScalar(0.9);
+            mesh.position.copy(pos);
             mesh.lookAt(0, 0, 0); 
+            
             mesh.userData.targetId = hs.targetSceneId;
             mesh.userData.base = hs.scale || 1;
-            scene.add(mesh);
+            
+            worldGroup.add(mesh); // Add to the same group as the sphere
             hotspots3D.push(mesh);
         });
     });
