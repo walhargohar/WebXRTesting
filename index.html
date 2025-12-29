@@ -1,236 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>360 VR Tour - Yacht Specialist</title>
-    <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        #viewer { width: 100vw; height: 100vh; touch-action: none; }
-        #room-label {
-            position: absolute; top: 20px; left: 20px; color: white;
-            background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 6px;
-            font-weight: bold; pointer-events: none; z-index: 1000;
-        }
-        #emergency-vr-btn {
-            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-            padding: 18px 36px; background: #ef4444; color: white; border: none;
-            border-radius: 12px; font-weight: bold; cursor: pointer; z-index: 2000;
-            display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.4);
-        }
-    </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-</head>
-<body>
-    <div id="viewer"></div>
-    <div id="room-label">LOADING...</div>
-    <button id="emergency-vr-btn">ENTER VR</button>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>V Marine - WebAR Prototype</title>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  </head>
+  <body>
+    <a-scene 
+      mindar-image="imageTargetSrc: ./targets.mind;" 
+      color-space="sRGB" 
+      renderer="colorManagement: true, physicallyCorrectLights" 
+      vr-mode-ui="enabled: false" 
+      device-orientation-permission-ui="enabled: false">
+      
+      <a-assets>
+        <a-asset-item id="boatModel" src="./boat.glb"></a-asset-item>
+      </a-assets>
 
-    <script>
-        const tourData = {"scenes":[{"id":"scene-1766656588295-0","name":"BEDROOM","image":"images/scene-1766656588295-0.jpg","hotspots":[{"id":"hotspot-1766656620756","position":[137.29383467363851,30.527194915871256,-478.90089619187256],"targetSceneId":"scene-1766656588308-1","icon":"icons/01.png","scale":1}],"initialView":{"yaw":-0.4102550402271438,"pitch":-0.007391982286629232}},{"id":"scene-1766656588308-1","name":"LIVING","image":"images/scene-1766656588308-1.jpg","hotspots":[{"id":"hotspot-1766656598373","position":[-365.12655587491173,13.435182309097629,340.2656615689241],"targetSceneId":"scene-1766656588295-0","icon":"icons/01.png","scale":1}],"initialView":{"yaw":2.930921146170076,"pitch":-0.011087974118601126}}]};
-        let scene, camera, renderer, controls, sphere;
-        let raycaster = new THREE.Raycaster();
-        let pointer = new THREE.Vector2();
-        let hotspots3D = [];
-        let controller1, controller2;
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <a-entity mindar-image-target="targetIndex: 0">
         
-        let initialPinchDistance = 0, initialFOV = 75;
-
-        if ('xr' in navigator) {
-            navigator.xr.isSessionSupported('immersive-vr').then(s => {
-                if(s) document.getElementById('emergency-vr-btn').style.display = 'block';
-            });
-        }
-
-        window.onload = () => { startEngine(); };
-
-        function startEngine() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-	    scene = new THREE.Scene();
-	    worldGroup = new THREE.Group();
-            scene.add(worldGroup);
-            
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('webgl2', { xrCompatible: true }) || 
-                            canvas.getContext('webgl', { xrCompatible: true });
-            
-            renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true, powerPreference: "high-performance" });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.xr.enabled = true; 
-            document.getElementById('viewer').appendChild(renderer.domElement);
-
-            setupVRControllers();
-
-            // --- FIX PART 1 & 2: INSTANT SYNC ---
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.rotateSpeed = -0.4;
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.enableZoom = false; 
-            controls.target.set(0, 0, 0); // Explicit target
-            camera.position.set(0, 0, 0.1); // Explicit nudge
-            controls.update(); 
-
-            const geometry = new THREE.SphereGeometry(500, 60, 40);
-            const material = new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: 0x111111 });
-            sphere = new THREE.Mesh(geometry, material);
-            worldGroup.add(sphere);
-
-            window.addEventListener('pointerdown', onPointerDown);
-            window.addEventListener('pointermove', (e) => {
-                pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
-                pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
-            });
-            
-            renderer.domElement.addEventListener('wheel', (e) => {
-                if (renderer.xr.isPresenting) return;
-                camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.05));
-                camera.updateProjectionMatrix();
-            }, { passive: true });
-
-            document.getElementById('emergency-vr-btn').onclick = () => {
-                navigator.xr.requestSession('immersive-vr', {
-                    optionalFeatures: ['local-floor', 'bounded-floor']
-                }).then(s => renderer.xr.setSession(s));
-            };
-
-            if (tourData.scenes.length > 0) loadScene(tourData.scenes[0].id);
-            renderer.setAnimationLoop(renderLoop);
-        }
-
-        function setupVRControllers() {
-            const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
-            const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false });
-
-            function onSelectStart(event) {
-                const controller = event.target;
-                const tempMatrix = new THREE.Matrix4();
-                tempMatrix.identity().extractRotation(controller.matrixWorld);
-                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-                
-                const intersects = raycaster.intersectObjects(hotspots3D);
-                if (intersects.length > 0) {
-                    const tid = intersects[0].object.userData.targetId;
-                    if (tid) loadScene(tid);
-                }
-            }
-
-            controller1 = renderer.xr.getController(0);
-            controller1.addEventListener('selectstart', onSelectStart);
-            scene.add(controller1);
-
-            controller2 = renderer.xr.getController(1);
-            controller2.addEventListener('selectstart', onSelectStart);
-            scene.add(controller2);
-
-            const line = new THREE.Line(lineGeom, lineMat);
-            line.scale.z = 10;
-            line.renderOrder = 999;
-            controller1.add(line.clone());
-            controller2.add(line.clone());
-        }
-
-        function renderLoop() {
-            let hoveredObject = null;
-            if (!renderer.xr.isPresenting) {
-                controls.update();
-                raycaster.setFromCamera(pointer, camera);
-                const intersects = raycaster.intersectObjects(hotspots3D);
-                if (intersects.length > 0) hoveredObject = intersects[0].object;
-            } else {
-                [controller1, controller2].forEach(ctrl => {
-                    const tempMatrix = new THREE.Matrix4();
-                    tempMatrix.identity().extractRotation(ctrl.matrixWorld);
-                    raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
-                    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-                    const intersects = raycaster.intersectObjects(hotspots3D);
-                    if (intersects.length > 0) hoveredObject = intersects[0].object;
-                });
-            }
-
-            const isVR = renderer.xr.isPresenting;
-            const fovScale = isVR ? 1 : camera.fov / 75;
-            const baseS = isVR ? 15 : 45;
-            const hoverS = isVR ? 20 : 55;
-
-            hotspots3D.forEach(h => {
-                const targetScale = (h === hoveredObject) ? hoverS : baseS;
-                const s = targetScale * (h.userData.base || 1) * fovScale;
-                h.scale.set(s, s, 1);
-            });
-
-            renderer.render(scene, camera);
-        }
-
-        function loadScene(id) {
-    const data = tourData.scenes.find(s => s.id === id);
-    document.getElementById('room-label').innerText = data.name;
-
-    new THREE.TextureLoader().load(data.image, (tex) => {
-        tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1;
-        sphere.material.map = tex;
-        sphere.material.color.set(0xffffff);
-        sphere.material.needsUpdate = true;
+        <a-entity 
+          gltf-model="#boatModel" 
+          rotation="0 0 0" 
+          position="0 0 0" 
+          scale="0.5 0.5 0.5">
+        </a-entity>
         
-        const yaw = (data.initialView && data.initialView.yaw) || 0;
-        const pitch = (data.initialView && data.initialView.pitch) || 0;
-
-        if (!renderer.xr.isPresenting) {
-            // PC/MOBILE: Rotate camera, keep world at zero
-            worldGroup.rotation.y = 0; 
-            const r = 0.1; 
-            camera.position.set(
-                r * Math.sin(yaw) * Math.cos(pitch), 
-                r * Math.sin(pitch), 
-                r * Math.cos(yaw) * Math.cos(pitch)
-            );
-            controls.target.set(0, 0, 0);
-            controls.update(); 
-        } else {
-            // VR: Keep camera at zero, rotate the entire world group
-            // This ensures hotspots and the sphere move together
-            worldGroup.rotation.y = -yaw; 
-        }
-    });
-
-    // Clear and reload hotspots
-    hotspots3D.forEach(h => worldGroup.remove(h)); // Remove from group
-    hotspots3D = [];
-    const loader = new THREE.TextureLoader();
-    
-    data.hotspots.forEach(hs => {
-        loader.load(hs.icon, (tex) => {
-            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
-            const geom = new THREE.PlaneGeometry(1, 1);
-            const mesh = new THREE.Mesh(geom, mat);
-            
-            const pos = new THREE.Vector3(...hs.position).multiplyScalar(0.9);
-            mesh.position.copy(pos);
-            mesh.lookAt(0, 0, 0); 
-            
-            mesh.userData.targetId = hs.targetSceneId;
-            mesh.userData.base = hs.scale || 1;
-            
-            worldGroup.add(mesh); // Add to the same group as the sphere
-            hotspots3D.push(mesh);
-        });
-    });
-}
-
-        function onPointerDown(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(hotspots3D);
-            if (intersects.length > 0) {
-                const targetId = intersects[0].object.userData.targetId;
-                if (targetId) loadScene(targetId);
-            }
-        }
-    </script>
-</body>
+      </a-entity>
+    </a-scene>
+  </body>
 </html>
