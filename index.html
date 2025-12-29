@@ -2,10 +2,37 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>V Marine - WebAR Prototype</title>
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    
+    <script>
+      AFRAME.registerComponent('sticky-object', {
+        init: function () {
+          const el = this.el;
+          
+          // 1. When target is found
+          el.addEventListener('targetFound', () => {
+            // Hide the "Scanning" overlay forever so it doesn't annoy the user
+            const scanningOverlay = document.querySelector('.mindar-ui-overlay');
+            if (scanningOverlay) {
+              scanningOverlay.classList.add('hidden');
+            }
+          });
+
+          // 2. When target is lost
+          el.addEventListener('targetLost', () => {
+            // Force the object to stay visible
+            el.object3D.visible = true;
+          });
+        }
+      });
+    </script>
+
+    <style>
+      .hidden { display: none !important; }
+    </style>
   </head>
+
   <body>
     <a-scene 
       mindar-image="imageTargetSrc: ./targets.mind; filterMinCF: 0.0001; filterBeta: 0.001;" 
@@ -20,7 +47,7 @@
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <a-entity mindar-image-target="targetIndex: 0">
+      <a-entity mindar-image-target="targetIndex: 0" sticky-object>
         
         <a-entity 
           gltf-model="#boatModel" 
