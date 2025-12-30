@@ -1,62 +1,32 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V Marine - High Fidelity AR</title>
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script>
+  <style>
+    body { margin: 0; background-color: #f0f0f0; height: 100vh; }
+    model-viewer { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+
+  <model-viewer 
+    src="boat.glb" 
+    ios-src="boat.usdz"
+    alt="A luxury V Marine Houseboat"
+    ar 
+    ar-modes="scene-viewer webxr quick-look" 
+    camera-controls 
+    shadow-intensity="1" 
+    auto-rotate>
     
-    <script>
-      AFRAME.registerComponent('sticky-object', {
-        init: function () {
-          const el = this.el;
-          
-          // 1. When target is found
-          el.addEventListener('targetFound', () => {
-            // Hide the "Scanning" overlay forever so it doesn't annoy the user
-            const scanningOverlay = document.querySelector('.mindar-ui-overlay');
-            if (scanningOverlay) {
-              scanningOverlay.classList.add('hidden');
-            }
-          });
+    <button slot="ar-button" style="background-color: white; border-radius: 4px; border: none; position: absolute; top: 16px; right: 16px; padding: 10px;">
+      👋 View in your space
+    </button>
+    
+  </model-viewer>
 
-          // 2. When target is lost
-          el.addEventListener('targetLost', () => {
-            // Force the object to stay visible
-            el.object3D.visible = true;
-          });
-        }
-      });
-    </script>
-
-    <style>
-      .hidden { display: none !important; }
-    </style>
-  </head>
-
-  <body>
-    <a-scene 
-      mindar-image="imageTargetSrc: ./targets.mind; filterMinCF: 0.0001; filterBeta: 0.001;" 
-      color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights" 
-      vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: false">
-      
-      <a-assets>
-        <a-asset-item id="boatModel" src="./boat.glb"></a-asset-item>
-      </a-assets>
-
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-
-      <a-entity mindar-image-target="targetIndex: 0" sticky-object>
-        
-        <a-entity 
-          gltf-model="#boatModel" 
-          rotation="0 0 0" 
-          position="0 0 0" 
-          scale="0.5 0.5 0.5">
-        </a-entity>
-        
-      </a-entity>
-    </a-scene>
-  </body>
+</body>
 </html>
